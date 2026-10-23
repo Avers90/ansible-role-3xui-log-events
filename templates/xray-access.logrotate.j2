@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+## Xray access log lists every destination users open: keep it short.
+## Xray holds the file open -> copytruncate. 3xui-log-events detects the
+## truncation (size < saved offset) and starts from the beginning.
+{{ xui_log_events_access_log }} {
+    daily
+    maxsize {{ xui_log_events_access_log_maxsize }}
+    rotate {{ xui_log_events_access_log_keep_days }}
+    missingok
+    notifempty
+    copytruncate
+    nocompress
+}

@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+## The script opens the file per run (append), no copytruncate/postrotate needed.
+{{ xui_log_events_log_file_dir }}/*.log {
+    weekly
+    rotate {{ xui_log_events_log_rotate_weeks }}
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 root adm
+}

@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=3x-ui log events: collect every {{ xui_log_events_collect_interval }}
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ xui_log_events_collect_interval }}
+AccuracySec=30s
+Unit=3xui-log-events@collect.service
+
+[Install]
+WantedBy=timers.target

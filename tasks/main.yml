@@ -1,0 +1,104 @@
+---
+- name: 3xui-log-events | Fail if distro is not supported
+  ansible.builtin.fail:
+    msg: "Distribution '{{ ansible_facts['distribution'] }}' is not supported. Supported: Debian, Ubuntu"
+  when: ansible_facts['distribution'] not in ['Debian', 'Ubuntu']
+
+- name: 3xui-log-events | Validate settings
+  ansible.builtin.assert:
+    that:
+      - xui_log_events_node | trim is match('^[a-z0-9][a-z0-9-]{0,31}$')
+      - xui_log_events_push_url | length == 0 or xui_log_events_push_token | length > 0
+      - xui_log_events_push_url | length == 0 or xui_log_events_push_url is match('https://')
+    fail_msg: >-
+      xui_log_events_node must be like 'kz-01' (got '{{ xui_log_events_node | trim }}');
+      xui_log_events_push_url needs https:// and xui_log_events_push_token
+    quiet: true
+
+- name: 3xui-log-events | Create state directory
+  ansible.builtin.file:
+    path: "{{ xui_log_events_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: 3xui-log-events | Create log directory
+  ansible.builtin.file:
+    path: "{{ xui_log_events_log_file_dir }}"
+    state: directory
+    owner: root
+    group: adm
+    mode: "0750"
+  when: xui_log_events_log_file_dir | length > 0
+
+- name: 3xui-log-events | Deploy logrotate config (own log)
+  ansible.builtin.template:
+    src: 3xui-log-events.logrotate.j2
+    dest: /etc/logrotate.d/3xui-log-events
+    owner: root
+    group: root
+    mode: "0644"
+  when: xui_log_events_log_file_dir | length > 0
+
+- name: 3xui-log-events | Deploy logrotate config (Xray access log)
+  ansible.builtin.template:
+    src: xray-access.logrotate.j2
+    dest: /etc/logrotate.d/xray-access
+    owner: root
+    group: root
+    mode: "0644"
+  when: xui_log_events_access_log_rotate | bool
+
+- name: 3xui-log-events | Remove access log rotation when disabled
+  ansible.builtin.file:
+    path: /etc/logrotate.d/xray-access
+    state: absent
+  when: not xui_log_events_access_log_rotate | bool
+
+- name: 3xui-log-events | Deploy script
+  ansible.builtin.copy:
+    src: 3xui-log-events.py
+    dest: "{{ xui_log_events_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 3xui-log-events | Deploy environment file
+  ansible.builtin.template:
+    src: 3xui-log-events.env.j2
+    dest: "{{ xui_log_events_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: 3xui-log-events | Deploy systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - 3xui-log-events@.service
+    - 3xui-log-events-collect.timer
+    - 3xui-log-events-push.timer
+  notify: Reload systemd
+
+- name: 3xui-log-events | Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: 3xui-log-events | Enable collect timer
+  ansible.builtin.systemd:
+    name: 3xui-log-events-collect.timer
+    enabled: true
+    state: started
+  ignore_errors: "{{ ansible_check_mode }}"  # unit absent on first --check
+
+- name: 3xui-log-events | Enable push timer
+  ansible.builtin.systemd:
+    name: 3xui-log-events-push.timer
+    enabled: "{{ xui_log_events_push_url | length > 0 }}"
+    state: "{{ 'started' if xui_log_events_push_url | length > 0 else 'stopped' }}"
+  ignore_errors: "{{ ansible_check_mode }}"

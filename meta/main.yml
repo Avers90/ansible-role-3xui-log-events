@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  author: Avers90
+  description: Collect 3x-ui / Xray node events (limit-IP bans, errors, probes, node sync) and per-user connection stats without destinations, push batches to an HTTP endpoint
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: Debian
+      versions: [bookworm]
+
+dependencies: []
+allow_duplicates: false

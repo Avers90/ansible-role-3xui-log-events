@@ -1,0 +1,52 @@
+---
+## Node name sent in every batch. Must match the node name in the 3x-ui master
+## panel (nodes/list), e.g. kz-01. The master itself reports as "master".
+## edge-kz-01.beget.com -> kz-01, panel-ru-01.beget.com -> master.
+xui_log_events_node: >-
+  {{ 'master' if inventory_hostname_short is match('panel-')
+     else inventory_hostname_short | regex_replace('^edge-', '') }}
+
+## Log files written by 3x-ui / Xray (a missing file is skipped)
+xui_log_events_log_dir: /var/log/x-ui
+xui_log_events_banned_log: "{{ xui_log_events_log_dir }}/3xipl-banned.log"
+xui_log_events_panel_log: "{{ xui_log_events_log_dir }}/3xui.log"
+## Xray access log. Enable it in the panel: Xray Settings -> Log -> Access =
+## this path. Only per-user counts leave the host, never destinations.
+xui_log_events_access_log: "{{ xui_log_events_log_dir }}/access.log"
+
+## Rotate the access log: it lists every site users open, keep it short.
+## Xray keeps the file open, so copytruncate is used.
+xui_log_events_access_log_rotate: true
+xui_log_events_access_log_keep_days: 1
+xui_log_events_access_log_maxsize: 200M
+
+## Client emails that are service links, not users (3x-ui node chains)
+xui_log_events_skip_email_prefixes: chain-
+
+## Local collection interval (systemd time span)
+xui_log_events_collect_interval: 5min
+
+## Push target. Empty URL = collect only, push timer is not installed.
+xui_log_events_push_url: ""
+## Bearer token for the push endpoint (keep it in vault). Required with push_url.
+xui_log_events_push_token: ""
+xui_log_events_push_interval: 10min
+xui_log_events_push_timeout: 30
+
+## Safety caps
+xui_log_events_max_events: 5000          # pending events kept while the receiver is down
+xui_log_events_max_errors_per_run: 20    # Xray error lines sent as events per run (all are counted)
+xui_log_events_max_read_bytes: 67108864  # per file per run; the rest is read next run
+
+## Own log file (in addition to journald). Empty dir = journald only.
+xui_log_events_log_file_dir: /var/log/3xui-log-events
+xui_log_events_log_rotate_weeks: 8
+
+## Paths
+xui_log_events_state_dir: /var/lib/3xui-log-events
+xui_log_events_script: /usr/local/sbin/3xui-log-events
+xui_log_events_env_file: /etc/3xui-log-events.env
+
+## systemd resource limits for both units
+xui_log_events_cpu_quota: 10%
+xui_log_events_memory_max: 128M

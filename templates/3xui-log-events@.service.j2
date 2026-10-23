@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+[Unit]
+Description=3x-ui log events: %i
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile={{ xui_log_events_env_file }}
+ExecStart=/usr/bin/python3 {{ xui_log_events_script }} %i
+## Never compete with the proxy
+Nice=19
+IOSchedulingClass=idle
+CPUQuota={{ xui_log_events_cpu_quota }}
+MemoryMax={{ xui_log_events_memory_max }}
+TimeoutStartSec=300
+## Hardening: reads root-owned logs, writes only its own state/log dirs
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths={{ ([xui_log_events_state_dir, xui_log_events_log_file_dir] | select | join(' ')) }}
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

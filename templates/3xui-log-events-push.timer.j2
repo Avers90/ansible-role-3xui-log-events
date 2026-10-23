@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+[Unit]
+Description=3x-ui log events: push every {{ xui_log_events_push_interval }}
+
+[Timer]
+OnBootSec=4min
+OnUnitActiveSec={{ xui_log_events_push_interval }}
+RandomizedDelaySec=60
+AccuracySec=30s
+Unit=3xui-log-events@push.service
+
+[Install]
+WantedBy=timers.target
