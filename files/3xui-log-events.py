@@ -7,6 +7,7 @@ Modes (argv[1]):
 
 What is read (all optional, a missing file is skipped):
   $XLE_BANNED_LOG  3x-ui limit-IP bans  "... BAN [Email] = u1 [IP] = 1.2.3.4 banned ..."
+                   (+ its *.prev.log: 3x-ui rotates it at local midnight)
   $XLE_PANEL_LOG   3xui.log: TLS handshake errors (probes), "ERROR - XRAY" lines,
                    "node traffic sync: fetch from <node> failed" (master only)
   $XLE_ACCESS_LOG  Xray access log: per client email / day / protocol the number
@@ -37,6 +38,10 @@ TOKEN = ENV("XLE_TOKEN", "")
 TIMEOUT = int(ENV("XLE_TIMEOUT", "30"))
 STATE_DIR = ENV("XLE_STATE_DIR", "/var/lib/3xui-log-events")
 BANNED_LOG = ENV("XLE_BANNED_LOG", "/var/log/x-ui/3xipl-banned.log")
+# 3x-ui moves the ban log to *.prev.log at local midnight and truncates it:
+# bans written after the last collect would be lost. Read the copy too; the
+# receiver deduplicates events, so lines seen twice are harmless.
+BANNED_PREV_LOG = ENV("XLE_BANNED_PREV_LOG", re.sub(r"\.log$", ".prev.log", BANNED_LOG))
 PANEL_LOG = ENV("XLE_PANEL_LOG", "/var/log/x-ui/3xui.log")
 ACCESS_LOG = ENV("XLE_ACCESS_LOG", "/var/log/x-ui/access.log")
 MAX_EVENTS = int(ENV("XLE_MAX_EVENTS", "5000"))
@@ -149,9 +154,15 @@ def bump(st, day, kind, n=1):
 
 def collect(st, now):
     stats = {"bans": 0, "probes": 0, "errors": 0, "sync": 0, "access": 0}
-    for line in read_new_lines(st, BANNED_LOG):
+    ban_lines = []
+    for path in (BANNED_PREV_LOG, BANNED_LOG):
+        if path:
+            ban_lines += read_new_lines(st, path)
+    seen = set()
+    for line in ban_lines:
         m = BAN_RE.search(line)
-        if m:
+        if m and line not in seen:
+            seen.add(line)
             st["events"].append({"type": "limit_ip_ban", "ts": to_epoch(m.group(1)),
                                  "email": m.group(2), "ip": m.group(3)})
             stats["bans"] += 1

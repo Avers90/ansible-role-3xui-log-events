@@ -121,8 +121,10 @@ sudo systemctl list-timers '3xui-log-events*'
 
 ## Known limits
 
-- Lines written between the last read and a `copytruncate` (up to one collect
-  interval) are lost; the same for `3xipl-banned.log`, which 3x-ui rotates daily.
+- Access-log lines written between the last read and a `copytruncate` (up to
+  one collect interval) are lost. `3xipl-banned.log` is safe: 3x-ui moves it to
+  `3xipl-banned.prev.log` at local midnight, the role reads that copy too
+  (events are deduplicated by the receiver).
 - Distinct IPs are counted per node; one device on two countries counts twice.
 
 ## License
