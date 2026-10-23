@@ -54,10 +54,11 @@ Every run writes one line to journald and `/var/log/3xui-log-events/3xui-log-eve
 - Debian / Ubuntu, `python3` (stdlib only)
 - 3x-ui ≥ 3.10 with logs in `/var/log/x-ui` (the panel's systemd sandbox
   allows writing there)
-- For per-user stats: Xray access log enabled in the panel —
-  *Xray Settings → Log → Access log* = `/var/log/x-ui/access.log`. Check on
-  every node that the setting reached it (`/usr/local/x-ui/bin/config.json`,
-  `"log": {"access": ...}`).
+- For per-user stats: Xray access log enabled **in each node's own panel** —
+  *Xray Settings → Log → Access log* = `./access.log` (resolves to
+  `/var/log/x-ui/access.log`). A master does not push log settings to nodes, and
+  on the master itself the log only has panel API traffic. Check
+  `/usr/local/x-ui/bin/config.json` → `"log": {"access": ...}` on the node.
 
 Node inbound tags look like `in-<id>-tcp` / `in-<id>-udp`; `-udp` is counted as
 Hysteria, the rest as VLESS.
