@@ -13,7 +13,7 @@ the host.
 | `3xui.log` | `probe` counter per day — `TLS handshake error` lines | Scanners and active probing of the node; a sudden jump is an early blocking signal |
 | `3xui.log` | `xray_error` counter per day + up to 20 events per run (message, 300 chars) | Xray crashes, inbound restarts |
 | `3xui.log` (master) | `node_sync_fail` — target node | `node traffic sync: fetch from <node> failed` |
-| Xray access log | per email / UTC day / protocol: accepted connections, distinct source IPs, first/last seen | Real device count vs. the plan limit, VLESS vs. Hysteria per user |
+| Xray access log | per email / UTC day / protocol: accepted connections, distinct source IPs and networks (/24, /48), first/last seen | Real device count vs. the plan limit, VLESS vs. Hysteria per user |
 
 ### Privacy
 
@@ -95,7 +95,7 @@ Hysteria, the rest as VLESS.
  "counters": [{"day": "2026-10-23", "type": "probe", "count": 5207},
               {"day": "2026-10-23", "type": "xray_error", "count": 5}],
  "conns":    [{"day": "2026-10-23", "email": "u763", "protocol": "vless",
-               "conns": 12, "ips": 2, "first_seen": 1792760000, "last_seen": 1792770000}]}
+               "conns": 12, "ips": 9, "nets": 2, "first_seen": 1792760000, "last_seen": 1792770000}]}
 ```
 
 Timestamps are Unix seconds; log lines are parsed in the host's local time zone.
@@ -126,7 +126,10 @@ sudo systemctl list-timers '3xui-log-events*'
   one collect interval) are lost. `3xipl-banned.log` is safe: 3x-ui moves it to
   `3xipl-banned.prev.log` at local midnight, the role reads that copy too
   (events are deduplicated by the receiver).
-- Distinct IPs are counted per node; one device on two countries counts twice.
+- Distinct IPs/networks are counted per node; one device on two countries counts twice.
+- `ips` is inflated for mobile users (the operator changes the IP every few
+  minutes: 60 IPs a day from one phone is normal); `nets` (distinct /24 or /48)
+  is the better proxy for the number of devices / places.
 
 ## License
 

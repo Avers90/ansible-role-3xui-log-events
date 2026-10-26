@@ -11,7 +11,8 @@ What is read (all optional, a missing file is skipped):
   $XLE_PANEL_LOG   3xui.log: TLS handshake errors (probes), "ERROR - XRAY" lines,
                    "node traffic sync: fetch from <node> failed" (master only)
   $XLE_ACCESS_LOG  Xray access log: per client email / day / protocol the number
-                   of accepted connections and of distinct source IPs.
+                   of accepted connections, distinct source IPs and distinct source
+                   networks (/24 IPv4, /48 IPv6).
 
 Privacy: the destination of an access-log line (where the user went) is never
 parsed, stored or sent. Source IPs live only in the local state file (root,
@@ -22,6 +23,7 @@ Counters and per-day aggregates are cumulative: the receiver keeps MAX, so a
 repeated push is harmless. Stdlib only.
 """
 import fcntl
+import ipaddress
 import json
 import os
 import re
@@ -80,6 +82,23 @@ def to_epoch(stamp):
 
 def utc_day(ts):
     return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
+
+
+def net_of(ip):
+    """Network of a source address: /24 for IPv4, /48 for IPv6.
+
+    Mobile operators hand out a new IP every few minutes: one phone shows up
+    as dozens of IPs a day, but within a few networks. The count of networks
+    is much closer to the count of devices / places than the count of IPs.
+    """
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if addr.version == 6 and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    prefix = 24 if addr.version == 4 else 48
+    return str(ipaddress.ip_network(f"{addr}/{prefix}", strict=False))
 
 
 def protocol_of(tag):
@@ -226,6 +245,7 @@ def build_payload(st, now):
             for proto, r in protos.items():
                 conns.append({"day": day, "email": email, "protocol": proto,
                               "conns": r["conns"], "ips": len(r["ips"]),
+                              "nets": len({net_of(ip) for ip in r["ips"]}),
                               "first_seen": r["first"], "last_seen": r["last"]})
     return {"node": NODE, "sent_at": now, "events": list(st["events"]),
             "counters": counters, "conns": conns}
