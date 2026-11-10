@@ -81,6 +81,7 @@ Hysteria, the rest as VLESS.
 | `xui_log_events_push_timeout` | `30` | Seconds |
 | `xui_log_events_max_events` | `5000` | Pending events kept while the receiver is down |
 | `xui_log_events_max_errors_per_run` | `20` | Xray error lines sent as events per run (all are counted) |
+| `xui_log_events_xray_error_ignore` | `failed to resolve ip > lookup .* no such host` | regex over the Xray ERROR message: matching lines are not counted or sent (client asked for a non-existent domain); empty = count all |
 | `xui_log_events_max_read_bytes` | `64 MiB` | Per file per run; the rest is read next run |
 | `xui_log_events_log_file_dir` | `/var/log/3xui-log-events` | Own log; empty = journald only |
 | `xui_log_events_state_dir` | `/var/lib/3xui-log-events` | State and lock |

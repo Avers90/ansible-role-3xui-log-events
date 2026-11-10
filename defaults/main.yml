@@ -36,6 +36,10 @@ xui_log_events_push_timeout: 30
 ## Safety caps
 xui_log_events_max_events: 5000          # pending events kept while the receiver is down
 xui_log_events_max_errors_per_run: 20    # Xray error lines sent as events per run (all are counted)
+## Regex (Python, no backslashes: it goes through a systemd EnvironmentFile) over the Xray
+## ERROR message; matching lines are neither counted nor sent. Default: a client asked for
+## a domain that does not exist. Empty = count every Xray ERROR line.
+xui_log_events_xray_error_ignore: "failed to resolve ip > lookup .* no such host"
 xui_log_events_max_read_bytes: 67108864  # per file per run; the rest is read next run
 
 ## Own log file (in addition to journald). Empty dir = journald only.

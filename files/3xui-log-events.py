@@ -51,6 +51,10 @@ MAX_ERRORS_PER_RUN = int(ENV("XLE_MAX_ERRORS_PER_RUN", "20"))
 MAX_READ_BYTES = int(ENV("XLE_MAX_READ_BYTES", str(64 * 1024 * 1024)))
 LOG_FILE = ENV("XLE_LOG_FILE", "")
 SKIP_EMAIL_PREFIXES = tuple(p for p in ENV("XLE_SKIP_EMAIL_PREFIXES", "chain-").split(",") if p)
+# Xray ERROR lines that are not node faults (a client asked for a domain that does not
+# exist): neither counted nor sent. Empty = count every Xray ERROR line.
+_ERR_IGNORE = ENV("XLE_XRAY_ERROR_IGNORE", "failed to resolve ip > lookup .* no such host")
+XRAY_ERROR_IGNORE_RE = re.compile(_ERR_IGNORE) if _ERR_IGNORE else None
 
 TS = r"(\d{4}/\d\d/\d\d \d\d:\d\d:\d\d)"
 BAN_RE = re.compile(TS + r"\s+BAN\s+\[Email\]\s*=\s*(\S+)\s+\[IP\]\s*=\s*(\S+)")
@@ -172,7 +176,7 @@ def bump(st, day, kind, n=1):
 
 
 def collect(st, now):
-    stats = {"bans": 0, "probes": 0, "errors": 0, "sync": 0, "access": 0}
+    stats = {"bans": 0, "probes": 0, "errors": 0, "errors_ignored": 0, "sync": 0, "access": 0}
     ban_lines = []
     for path in (BANNED_PREV_LOG, BANNED_LOG):
         if path:
@@ -196,6 +200,9 @@ def collect(st, now):
             continue
         m = XRAY_ERROR_RE.search(line)
         if m:
+            if XRAY_ERROR_IGNORE_RE and XRAY_ERROR_IGNORE_RE.search(m.group(2)):
+                stats["errors_ignored"] += 1
+                continue
             ts = to_epoch(m.group(1))
             bump(st, utc_day(ts), "xray_error")
             if errors_left > 0:
