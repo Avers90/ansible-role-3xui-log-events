@@ -8,8 +8,11 @@ Modes (argv[1]):
 What is read (all optional, a missing file is skipped):
   $XLE_BANNED_LOG  3x-ui limit-IP bans  "... BAN [Email] = u1 [IP] = 1.2.3.4 banned ..."
                    (+ its *.prev.log: 3x-ui rotates it at local midnight)
-  $XLE_PANEL_LOG   3xui.log: TLS handshake errors (probes), "ERROR - XRAY" lines,
-                   "node traffic sync: fetch from <node> failed" (master only)
+  $XLE_PANEL_LOG   3xui.log: TLS handshake errors (probes), unauthorized panel WebSocket
+                   attempts (ws_probe), "ERROR - XRAY" lines; master only:
+                   "node traffic sync: fetch from <node> failed" (event), every other
+                   failed master -> node call (poll_fail:<node> counter), subscription
+                   requests by client app (sub_ua:<app> counter, from the User-Agent)
   $XLE_ACCESS_LOG  Xray access log: per client email / day / protocol the number
                    of accepted connections, distinct source IPs and distinct source
                    networks (/24 IPv4, /48 IPv6).
@@ -53,7 +56,8 @@ LOG_FILE = ENV("XLE_LOG_FILE", "")
 SKIP_EMAIL_PREFIXES = tuple(p for p in ENV("XLE_SKIP_EMAIL_PREFIXES", "chain-").split(",") if p)
 # Xray ERROR lines that are not node faults (a client asked for a domain that does not
 # exist): neither counted nor sent. Empty = count every Xray ERROR line.
-_ERR_IGNORE = ENV("XLE_XRAY_ERROR_IGNORE", "failed to resolve ip > lookup .* no such host")
+_ERR_IGNORE = ENV("XLE_XRAY_ERROR_IGNORE",
+                  "failed to resolve ip > (lookup .* no such host|features/dns: empty response)")
 XRAY_ERROR_IGNORE_RE = re.compile(_ERR_IGNORE) if _ERR_IGNORE else None
 
 TS = r"(\d{4}/\d\d/\d\d \d\d:\d\d:\d\d)"
@@ -61,6 +65,15 @@ BAN_RE = re.compile(TS + r"\s+BAN\s+\[Email\]\s*=\s*(\S+)\s+\[IP\]\s*=\s*(\S+)")
 SYNC_FAIL_RE = re.compile(TS + r".*node traffic sync: fetch from (\S+) failed")
 XRAY_ERROR_RE = re.compile(TS + r"\s+ERROR - XRAY:\s*(.*)$")
 PROBE_RE = re.compile(TS + r".*TLS handshake error from ")
+WS_PROBE_RE = re.compile(TS + r".*Unauthorized WebSocket connection attempt")
+# Master -> node calls other than the traffic pull: onlines, lastOnline, client IPs, pushes
+POLL_FAIL_RE = re.compile(TS + r".*(?:remote (\S+) .+? fetch failed"
+                          r"|node traffic sync: (?:push .+? to|fetch .+? from|reconcile for) (\S+) failed)")
+SUB_UA_RE = re.compile(TS + r".*Subscription request routed: .*user_agent=\"([^\"]*)\"")
+# Client app = leading token of the User-Agent: "Happ/4.8.0/ios/..." -> Happ
+APP_RE = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,31}")
+NODE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+MAX_SUB_APPS = 30   # distinct apps per day; the rest go to "other"
 # "<ts>.<us> from [tcp:]<ip>:<port> accepted <DESTINATION> [<inbound-tag> ...] email: <e>"
 # The destination is matched by \S+ and NOT captured.
 ACCESS_RE = re.compile(
@@ -175,8 +188,18 @@ def bump(st, day, kind, n=1):
     c[kind] = c.get(kind, 0) + n
 
 
+def sub_app(st, day, user_agent):
+    m = APP_RE.match(user_agent)
+    app = m.group(0) if m else "unknown"
+    known = [k for k in st["counters"].get(day, {}) if k.startswith("sub_ua:")]
+    if f"sub_ua:{app}" not in known and len(known) >= MAX_SUB_APPS:
+        app = "other"
+    return f"sub_ua:{app}"
+
+
 def collect(st, now):
-    stats = {"bans": 0, "probes": 0, "errors": 0, "errors_ignored": 0, "sync": 0, "access": 0}
+    stats = {"bans": 0, "probes": 0, "ws_probes": 0, "errors": 0, "errors_ignored": 0,
+             "sync": 0, "poll": 0, "subs": 0, "access": 0}
     ban_lines = []
     for path in (BANNED_PREV_LOG, BANNED_LOG):
         if path:
@@ -209,6 +232,24 @@ def collect(st, now):
                 st["events"].append({"type": "xray_error", "ts": ts, "message": m.group(2)[:300]})
                 errors_left -= 1
             stats["errors"] += 1
+            continue
+        m = POLL_FAIL_RE.search(line)
+        if m:
+            target = m.group(2) or m.group(3)
+            if NODE_NAME_RE.match(target):
+                bump(st, utc_day(to_epoch(m.group(1))), f"poll_fail:{target}")
+                stats["poll"] += 1
+            continue
+        m = SUB_UA_RE.search(line)
+        if m:
+            day = utc_day(to_epoch(m.group(1)))
+            bump(st, day, sub_app(st, day, m.group(2)))
+            stats["subs"] += 1
+            continue
+        m = WS_PROBE_RE.search(line)
+        if m:
+            bump(st, utc_day(to_epoch(m.group(1))), "ws_probe")
+            stats["ws_probes"] += 1
             continue
         m = PROBE_RE.search(line)
         if m:
@@ -243,6 +284,9 @@ def build_payload(st, now):
     for day, kinds in sorted(st["counters"].items()):
         for kind in ("probe", "xray_error"):
             counters.append({"day": day, "type": kind, "count": int(kinds.get(kind, 0))})
+        for kind, count in sorted(kinds.items()):
+            if kind not in ("probe", "xray_error"):
+                counters.append({"day": day, "type": kind, "count": int(count)})
     if not st["counters"]:
         # Heartbeat: the receiver shows the node as reporting even on a quiet day.
         counters = [{"day": utc_day(now), "type": "probe", "count": 0}]

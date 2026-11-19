@@ -12,7 +12,10 @@ the host.
 | `3xipl-banned.log` | `limit_ip_ban` — client email, source IP, time | The panel cut a connection for 30 min because the client had more simultaneous devices than its `limitIp`. Users see it as "VPN keeps dropping" |
 | `3xui.log` | `probe` counter per day — `TLS handshake error` lines | Scanners and active probing of the node; a sudden jump is an early blocking signal |
 | `3xui.log` | `xray_error` counter per day + up to 20 events per run (message, 300 chars) | Xray crashes, inbound restarts |
+| `3xui.log` | `ws_probe` counter per day — `Unauthorized WebSocket connection attempt` | Scanners knocking on the panel |
 | `3xui.log` (master) | `node_sync_fail` — target node | `node traffic sync: fetch from <node> failed` |
+| `3xui.log` (master) | `poll_fail:<node>` counter per day — every other failed master → node call (onlines, lastOnline, client IPs, pushes) | A flaky link to one node, before traffic sync fails |
+| `3xui.log` (master) | `sub_ua:<app>` counter per day — `Subscription request routed … user_agent=` (app = first UA token, max 30 apps/day, rest `other`) | Which client apps load subscriptions; no user is attached |
 | Xray access log | per email / UTC day / protocol: accepted connections, distinct source IPs and networks (/24, /48), first/last seen | Real device count vs. the plan limit, VLESS vs. Hysteria per user |
 
 ### Privacy
