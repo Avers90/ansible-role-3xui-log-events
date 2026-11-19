@@ -73,7 +73,10 @@ SUB_UA_RE = re.compile(TS + r".*Subscription request routed: .*user_agent=\"([^\
 # Client app = leading token of the User-Agent: "Happ/4.8.0/ios/..." -> Happ
 APP_RE = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,31}")
 NODE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
-MAX_SUB_APPS = 30   # distinct apps per day; the rest go to "other"
+MAX_SUB_APPS_PER_DAY = 30   # the rest go to "other"
+POLL_FAIL_PREFIX = "poll_fail:"
+SUB_UA_PREFIX = "sub_ua:"
+BASE_COUNTERS = ("probe", "xray_error")   # always sent, 0 included
 # "<ts>.<us> from [tcp:]<ip>:<port> accepted <DESTINATION> [<inbound-tag> ...] email: <e>"
 # The destination is matched by \S+ and NOT captured.
 ACCESS_RE = re.compile(
@@ -191,10 +194,11 @@ def bump(st, day, kind, n=1):
 def sub_app(st, day, user_agent):
     m = APP_RE.match(user_agent)
     app = m.group(0) if m else "unknown"
-    known = [k for k in st["counters"].get(day, {}) if k.startswith("sub_ua:")]
-    if f"sub_ua:{app}" not in known and len(known) >= MAX_SUB_APPS:
-        app = "other"
-    return f"sub_ua:{app}"
+    counters = st["counters"].get(day, {})
+    key = SUB_UA_PREFIX + app
+    if key not in counters and sum(k.startswith(SUB_UA_PREFIX) for k in counters) >= MAX_SUB_APPS_PER_DAY:
+        key = SUB_UA_PREFIX + "other"
+    return key
 
 
 def collect(st, now):
@@ -215,13 +219,14 @@ def collect(st, now):
 
     errors_left = MAX_ERRORS_PER_RUN
     for line in read_new_lines(st, PANEL_LOG):
-        m = SYNC_FAIL_RE.search(line)
+        # Cheap substring checks first: the panel log is mostly lines nobody counts
+        m = SYNC_FAIL_RE.search(line) if "fetch from" in line else None
         if m:
             st["events"].append({"type": "node_sync_fail", "ts": to_epoch(m.group(1)),
                                  "target": m.group(2)})
             stats["sync"] += 1
             continue
-        m = XRAY_ERROR_RE.search(line)
+        m = XRAY_ERROR_RE.search(line) if "XRAY" in line else None
         if m:
             if XRAY_ERROR_IGNORE_RE and XRAY_ERROR_IGNORE_RE.search(m.group(2)):
                 stats["errors_ignored"] += 1
@@ -233,25 +238,25 @@ def collect(st, now):
                 errors_left -= 1
             stats["errors"] += 1
             continue
-        m = POLL_FAIL_RE.search(line)
+        m = POLL_FAIL_RE.search(line) if " failed" in line else None
         if m:
             target = m.group(2) or m.group(3)
             if NODE_NAME_RE.match(target):
-                bump(st, utc_day(to_epoch(m.group(1))), f"poll_fail:{target}")
+                bump(st, utc_day(to_epoch(m.group(1))), POLL_FAIL_PREFIX + target)
                 stats["poll"] += 1
             continue
-        m = SUB_UA_RE.search(line)
+        m = SUB_UA_RE.search(line) if "Subscription request routed" in line else None
         if m:
             day = utc_day(to_epoch(m.group(1)))
             bump(st, day, sub_app(st, day, m.group(2)))
             stats["subs"] += 1
             continue
-        m = WS_PROBE_RE.search(line)
+        m = WS_PROBE_RE.search(line) if "Unauthorized WebSocket" in line else None
         if m:
             bump(st, utc_day(to_epoch(m.group(1))), "ws_probe")
             stats["ws_probes"] += 1
             continue
-        m = PROBE_RE.search(line)
+        m = PROBE_RE.search(line) if "TLS handshake error" in line else None
         if m:
             bump(st, utc_day(to_epoch(m.group(1))), "probe")
             stats["probes"] += 1
@@ -282,10 +287,10 @@ def collect(st, now):
 def build_payload(st, now):
     counters = []
     for day, kinds in sorted(st["counters"].items()):
-        for kind in ("probe", "xray_error"):
+        for kind in BASE_COUNTERS:
             counters.append({"day": day, "type": kind, "count": int(kinds.get(kind, 0))})
         for kind, count in sorted(kinds.items()):
-            if kind not in ("probe", "xray_error"):
+            if kind not in BASE_COUNTERS:
                 counters.append({"day": day, "type": kind, "count": int(count)})
     if not st["counters"]:
         # Heartbeat: the receiver shows the node as reporting even on a quiet day.
